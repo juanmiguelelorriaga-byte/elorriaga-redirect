@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Control Elorriaga.org</title>
+
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+    background: #f5f5f7;
+    margin: 0;
+    padding: 30px 15px;
+    color: #1d1d1f;
+  }
+
+  .card {
+    max-width: 600px;
+    margin: auto;
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.08);
+  }
+
+  h1 {
+    margin-top: 0;
+    margin-bottom: 5px;
+  }
+
+  .subtitle {
+    color: #666;
+    margin-top: 0;
+    margin-bottom: 30px;
+  }
+
+  label {
+    display: block;
+    font-weight: 600;
+    margin: 20px 0 8px;
+  }
+
+  input[type="url"] {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+    border: 1px solid #bbb;
+    border-radius: 9px;
+  }
+
+  button {
+    width: 100%;
+    padding: 14px;
+    margin-top: 15px;
+    border: 0;
+    border-radius: 9px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  #updateBtn {
+    background: #111;
+    color: white;
+  }
+
+  #loadBtn {
+    background: #111;
+    color: white;
+  }
+
+  #forgetBtn {
+    background: #eee;
+    color: #333;
+  }
+
+  #current {
+    background: #f5f5f7;
+    padding: 12px;
+    border-radius: 8px;
+    word-break: break-all;
+  }
+
+  #status {
+    margin-top: 20px;
+    padding: 12px;
+    border-radius: 8px;
+    display: none;
+  }
+
+  .success {
+    display: block !important;
+    background: #e8f7ec;
+  }
+
+  .error {
+    display: block !important;
+    background: #fdeaea;
+  }
+
+  .keyStatus {
+    font-size: 14px;
+    color: #666;
+    margin-top: 25px;
+  }
+
+  #keyFile {
+    display: none;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+  <h1>Control Elorriaga.org</h1>
+  <p class="subtitle">Administrador de redirección</p>
+
+  <div id="noKey">
+    <p>Este dispositivo todavía no tiene una llave configurada.</p>
+
+    <button id="loadBtn">
+      Cargar llave
+    </button>
+
+    <input type="file" id="keyFile" accept=".json">
+  </div>
+
+  <div id="control" style="display:none;">
+
+    <label>Destino actual</label>
+    <div id="current">Consultando...</div>
+
+    <label for="newUrl">Nueva dirección</label>
+
+    <input
+      type="url"
+      id="newUrl"
+      placeholder="https://..."
+      autocomplete="off"
+    >
+
+    <button id="updateBtn">
+      Actualizar destino
+    </button>
+
+    <div id="status"></div>
+
+    <div class="keyStatus">
+      Llave guardada en este dispositivo
+    </div>
+
+    <button id="forgetBtn">
+      Olvidar llave de este dispositivo
+    </button>
+
+  </div>
+
+</div>
+
+<script>
+
+const STORAGE_KEY = "elorriagaRedirectKey";
+
+const noKey = document.getElementById("noKey");
+const control = document.getElementById("control");
+const keyFile = document.getElementById("keyFile");
+const loadBtn = document.getElementById("loadBtn");
+const forgetBtn = document.getElementById("forgetBtn");
+const updateBtn = document.getElementById("updateBtn");
+const current = document.getElementById("current");
+const newUrl = document.getElementById("newUrl");
+const statusBox = document.getElementById("status");
+
+let keyData = null;
+
+function showStatus(message, type) {
+  statusBox.textContent = message;
+  statusBox.className = type;
+}
+
+function validKey(data) {
+  return (
+    data &&
+    data.owner &&
+    data.repo &&
+    data.branch &&
+    data.file &&
+    data.token
+  );
+}
+
+function initialize() {
+
+  const stored = localStorage.getItem(STORAGE_KEY);
+
+  if (stored) {
+    try {
+      const parsed = JSON.parse(stored);
+
+      if (validKey(parsed)) {
+        keyData = parsed;
+        noKey.style.display = "none";
+        control.style.display = "block";
+        loadCurrent();
+        return;
+      }
+    } catch (e) {}
+  }
+
+  noKey.style.display = "block";
+  control.style.display = "none";
+}
+
+loadBtn.addEventListener("click", () => {
+  keyFile.click();
+});
+
+keyFile.addEventListener("change", async () => {
+
+  const file = keyFile.files[0];
+
+  if (!file) return;
+
+  try {
+
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    if (!validKey(data)) {
+      alert("La llave no tiene el formato correcto.");
+      return;
+    }
+
+    keyData = data;
+
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(data)
+    );
+
+    initialize();
+
+  } catch (e) {
+    alert("No fue posible leer la llave.");
+  }
+
+});
+
+async function loadCurrent() {
+
+  try {
+
+    const api =
+      `https://api.github.com/repos/${keyData.owner}/${keyData.repo}/contents/${keyData.file}?ref=${keyData.branch}`;
+
+    const response = await fetch(api, {
+      headers: {
+        "Authorization": `Bearer ${keyData.token}`,
+        "Accept": "application/vnd.github+json"
+      }
+    });
+
+    if (!response.ok)
+      throw new Error("GitHub respondió " + response.status);
+
+    const data = await response.json();
+
+    const decoded = decodeURIComponent(
+      escape(atob(data.content.replace(/\n/g, "")))
+    );
+
+    const config = JSON.parse(decoded);
+
+    current.textContent = config.url;
+    newUrl.value = config.url;
+
+  } catch (e) {
+
+    current.textContent = "No se pudo consultar.";
+
+    showStatus(
+      "No fue posible conectar con GitHub. Verifica la llave.",
+      "error"
+    );
+  }
+}
+
+updateBtn.addEventListener("click", async () => {
+
+  let url = newUrl.value.trim();
+
+  try {
+    const parsed = new URL(url);
+
+    if (
+      parsed.protocol !== "https:" &&
+      parsed.protocol !== "http:"
+    ) {
+      throw new Error();
+    }
+
+  } catch {
+    showStatus(
+      "Introduce una dirección válida, incluyendo https://",
+      "error"
+    );
+    return;
+  }
+
+  updateBtn.disabled = true;
+  updateBtn.textContent = "Actualizando...";
+
+  try {
+
+    const api =
+      `https://api.github.com/repos/${keyData.owner}/${keyData.repo}/contents/${keyData.file}`;
+
+    const getResponse = await fetch(api + `?ref=${keyData.branch}`, {
+      headers: {
+        "Authorization": `Bearer ${keyData.token}`,
+        "Accept": "application/vnd.github+json"
+      }
+    });
+
+    if (!getResponse.ok)
+      throw new Error("No se pudo leer config.json");
+
+    const existing = await getResponse.json();
+
+    const config = JSON.stringify(
+      { url: url },
+      null,
+      2
+    ) + "\n";
+
+    const encoded = btoa(
+      unescape(
+        encodeURIComponent(config)
+      )
+    );
+
+    const updateResponse = await fetch(api, {
+
+      method: "PUT",
+
+      headers: {
+        "Authorization": `Bearer ${keyData.token}`,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json"
+      },
+
+      body: JSON.stringify({
+        message: "Update redirect destination",
+        content: encoded,
+        sha: existing.sha,
+        branch: keyData.branch
+      })
+
+    });
+
+    if (!updateResponse.ok) {
+
+      const error = await updateResponse.text();
+
+      throw new Error(error);
+    }
+
+    current.textContent = url;
+
+    showStatus(
+      "Destino actualizado correctamente.",
+      "success"
+    );
+
+  } catch (e) {
+
+    console.error(e);
+
+    showStatus(
+      "No fue posible actualizar el destino.",
+      "error"
+    );
+
+  } finally {
+
+    updateBtn.disabled = false;
+    updateBtn.textContent = "Actualizar destino";
+
+  }
+
+});
+
+forgetBtn.addEventListener("click", () => {
+
+  if (
+    confirm(
+      "¿Quieres eliminar la llave guardada en este dispositivo?"
+    )
+  ) {
+
+    localStorage.removeItem(STORAGE_KEY);
+    keyData = null;
+    location.reload();
+
+  }
+
+});
+
+initialize();
+
+</script>
+
+</body>
+</html>
