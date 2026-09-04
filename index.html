@@ -3,9 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <title>Elorriaga.org</title>
+  <script>
+    fetch('config.json?t=' + Date.now())
+      .then(response => response.json())
+      .then(config => {
+        window.location.replace(config.url);
+      })
+      .catch(error => {
+        document.body.innerHTML = '<p>Error al cargar el destino.</p>';
+      });
+  </script>
 </head>
 <body>
-  <h1>Elorriaga.org funciona</h1>
-  <p>Esta página está cargada desde GitHub Pages.</p>
+  <p>Redireccionando...</p>
 </body>
 </html>
